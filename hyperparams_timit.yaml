@@ -1,0 +1,148 @@
+# Generated 2023-12-11 from:
+# /data/rumberg/projects/talc/train_ctc_timit_with_checkpoint/hparams/train.yaml
+# yamllint disable
+# ################################
+# Model: VGG2 + LiGRU with time pooling for efficiency
+# Additions: TimeDomainSpecAugment
+# Authors: Mirco Ravanelli & Peter Plantinga 2020
+# ################################
+
+# Seed needs to be set at top of yaml, before objects with parameters are made
+seed: 2888
+__set_seed: !apply:torch.manual_seed [2888]
+output_folder: results/augment_noise_CRDNN/2888
+wer_file: results/augment_noise_CRDNN/2888/wer.txt
+save_folder: results/augment_noise_CRDNN/2888/save
+train_log: results/augment_noise_CRDNN/2888/train_log.txt
+
+# Data files
+data_folder: /path/to/TIMIT  # e.g. /path/to/TIMIT
+open_rir_folder: /path/to/TIMIT # where to store noisy data for augment
+train_annotation: /path/to/TIMIT/train.csv
+valid_annotation: /path/to/TIMIT/dev.csv
+test_annotation: /path/to/TIMIT/test.csv
+skip_prep: false # Skip data preparation
+
+# Training parameters
+number_of_epochs: 50
+batch_size: 1
+lr: 1.0
+sorting: descending # choose between ascending, descending and random
+
+# Feature parameters
+sample_rate: 16000
+n_fft: 400
+n_mels: 40
+
+# Model parameters
+activation: &id001 !name:torch.nn.LeakyReLU
+dropout: 0.15
+cnn_blocks: 2
+cnn_channels: (128, 256)
+cnn_kernelsize: (3, 3)
+rnn_layers: 4
+rnn_neurons: 512
+rnn_bidirectional: true
+dnn_blocks: 2
+dnn_neurons: 512
+
+# Outputs
+output_neurons: 40
+blank_index: 0
+
+# Dataloader options
+train_dataloader_opts:
+  batch_size: 1
+
+valid_dataloader_opts:
+  batch_size: 1
+
+test_dataloader_options:
+  batch_size: 1
+
+normalize: &id004 !new:speechbrain.processing.features.InputNormalization
+  norm_type: global
+
+augmentation: !new:speechbrain.lobes.augment.TimeDomainSpecAugment
+  sample_rate: 16000
+  speeds: [95, 100, 105]
+
+# Can be removed to improve speed
+env_corrupt: &id005 !new:speechbrain.lobes.augment.EnvCorrupt
+
+  openrir_folder: /path/to/TIMIT
+  babble_prob: 0.0
+  reverb_prob: 0.0
+  noise_prob: 1.0
+  noise_snr_low: 0
+  noise_snr_high: 15
+
+epoch_counter: &id007 !new:speechbrain.utils.epoch_loop.EpochCounter
+
+  limit: 50
+
+compute_features: !new:speechbrain.lobes.features.Fbank
+  sample_rate: 16000
+  n_fft: 400
+  n_mels: 40
+
+model: &id002 !new:speechbrain.lobes.models.CRDNN.CRDNN
+  input_shape: [null, null, 40]
+  activation: *id001
+  dropout: 0.15
+  cnn_blocks: 2
+  cnn_channels: (128, 256)
+  cnn_kernelsize: (3, 3)
+  time_pooling: true
+  rnn_layers: 4
+  rnn_neurons: 512
+  rnn_bidirectional: true
+  dnn_blocks: 2
+  dnn_neurons: 512
+
+output: &id003 !new:speechbrain.nnet.linear.Linear
+  input_size: 512
+  n_neurons: 40
+  bias: true
+
+log_softmax: !new:speechbrain.nnet.activations.Softmax
+  apply_log: true
+
+opt_class: !name:torch.optim.Adadelta
+  rho: 0.95
+  lr: 1.0
+  eps: 1.e-8
+
+lr_annealing: &id006 !new:speechbrain.nnet.schedulers.NewBobScheduler
+  initial_value: 1.0
+  improvement_threshold: 0.0025
+  annealing_factor: 0.8
+  patient: 0
+
+modules:
+  model: *id002
+  output: *id003
+  normalize: *id004
+  env_corrupt: *id005
+jit_module_keys: [model]
+
+checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
+  checkpoints_dir: results/augment_noise_CRDNN/2888/save
+  recoverables:
+    model: *id002
+    output: *id003
+    scheduler: *id006
+    normalizer: *id004
+    counter: *id007
+compute_cost: !name:speechbrain.nnet.losses.ctc_loss
+  blank_index: 0
+
+train_logger: !new:speechbrain.utils.train_logger.FileTrainLogger
+  save_file: results/augment_noise_CRDNN/2888/train_log.txt
+
+ctc_stats: !name:speechbrain.utils.metric_stats.MetricStats
+  metric: !name:speechbrain.nnet.losses.ctc_loss
+    blank_index: 0
+    reduction: batch
+
+per_stats: !name:speechbrain.utils.metric_stats.ErrorRateStats
